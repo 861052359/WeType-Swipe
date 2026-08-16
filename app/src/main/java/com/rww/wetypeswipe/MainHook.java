@@ -1371,7 +1371,6 @@ public final class MainHook extends XposedModule {
 
         if (maskedAction == MotionEvent.ACTION_DOWN) {
             tracker.begin(keyboard, event.getX(), event.getY());
-            Object result = chain.proceed();
 
             KeyInfo keyInfo = keyAfterDown(keyboard, event);
             boolean letterMode = config.letterModeEnabled && letterModeApplies(keyboard);
@@ -1395,14 +1394,21 @@ public final class MainHook extends XposedModule {
             float thresholdPx = dp(keyboard,
                     keyInfo != null && keyInfo.t9 ? config.t9ThresholdDp : config.thresholdDp);
             tracker.setBinding(keyboard, keyInfo, requestedAction, thresholdPx);
-            if (directText != null) {
-                // 字母模式下不立即提交：先让原键盘取消这次按键，避免它在 UP 时重复提交；
-                // 等确定是普通点击（未触发下滑）后，在 ACTION_UP 时由我们自己提交。
+
+            if (letterMode && directText != null) {
+                // 字母模式接管本次按下：不把真实 DOWN 交给键盘（只派发 ACTION_CANCEL，
+                // 键盘没有按下态就绝不会自己派发字母/点击，避免"点一个输入两个"）；
+                // 普通点击在 ACTION_UP 时由模块提交字母，下滑时执行绑定动作。
                 tracker.setDirectCommit(keyboard, directText);
                 proceedWithCancel(chain, event);
-            } else if (requestedAction == Config.ACTION_NONE) {
-                tracker.clear(keyboard);
+                keyboard.post(() -> hideKeyboardHint(0L));
+                return Boolean.TRUE;
             }
+
+            // 其余按键（含非字母模式下的手势绑定键）保持原生：真实 DOWN 交给键盘，
+            // 普通点击正常输入，仅下滑时由模块接管执行动作。
+            tracker.clear(keyboard);
+            Object result = chain.proceed();
             keyboard.post(() -> hideKeyboardHint(0L));
             return result;
         }
@@ -1701,7 +1707,9 @@ public final class MainHook extends XposedModule {
     }
 
     private KeyInfo keyAfterDown(Object keyboard, MotionEvent event) {
-        Object button = invoke(keyboard, "getActionButton");
+        // 不再优先取 getActionButton：模块接管按键时键盘并未处理真实 DOWN，
+        // 该值可能是上一次按下的陈旧高亮键，会识别错字母。直接按触摸坐标取键。
+        Object button = null;
         for (String name : LetterModeGuard.touchKeyButtonMethodCandidates()) {
             if (button == null) button = invoke(keyboard, name, event, false);
             if (button == null) button = invoke(keyboard, name, event, true);
