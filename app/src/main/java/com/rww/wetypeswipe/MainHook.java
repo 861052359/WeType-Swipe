@@ -1353,15 +1353,18 @@ public final class MainHook extends XposedModule {
 
             KeyInfo keyInfo = keyAfterDown(keyboard, event);
 
+            boolean directCommit = false;
             if (config.letterModeEnabled && keyInfo != null && !keyInfo.t9) {
                 String key = keyInfo.key;
                 if (key != null && key.length() == 1 && key.charAt(0) >= 'a' && key.charAt(0) <= 'z') {
                     commitLetterDirectly(keyboard, key);
+                    directCommit = true;
                 }
             }
             if (config.letterModeEnabled && keyInfo == null) {
                 if (isSpaceKeyAtTouch(keyboard, event)) {
                     commitLetterDirectly(keyboard, " ");
+                    directCommit = true;
                 }
             }
 
@@ -1371,7 +1374,10 @@ public final class MainHook extends XposedModule {
             float thresholdPx = dp(keyboard,
                     keyInfo != null && keyInfo.t9 ? config.t9ThresholdDp : config.thresholdDp);
             tracker.setBinding(keyboard, keyInfo, requestedAction, thresholdPx);
-            if (requestedAction == Config.ACTION_NONE) {
+            if (directCommit) {
+                // 字母模式已在按下时直接提交，抬起时需要拦截原键盘输入，避免重复。
+                tracker.setDirectCommit(keyboard);
+            } else if (requestedAction == Config.ACTION_NONE) {
                 tracker.clear(keyboard);
             }
             keyboard.post(() -> hideKeyboardHint(0L));
@@ -1425,6 +1431,14 @@ public final class MainHook extends XposedModule {
                 if (maskedAction == MotionEvent.ACTION_UP) tracker.clear(keyboard);
                 return Boolean.TRUE;
             }
+        }
+
+        if (tracker.directCommit && maskedAction == MotionEvent.ACTION_UP) {
+            // 拦截抬起事件并发送 CANCEL，避免原键盘再提交一次字母/空格。
+            proceedWithCancel(chain, event);
+            tracker.clear(keyboard);
+            keyboard.post(() -> hideKeyboardHint(120L));
+            return Boolean.TRUE;
         }
 
         Object result = chain.proceed();
@@ -2547,6 +2561,7 @@ public final class MainHook extends XposedModule {
         private int action;
         private boolean t9;
         private boolean triggered;
+        private boolean directCommit;
         private boolean active;
 
         void begin(View keyboard, float x, float y) {
@@ -2559,6 +2574,7 @@ public final class MainHook extends XposedModule {
             action = Config.ACTION_NONE;
             t9 = false;
             triggered = false;
+            directCommit = false;
             active = true;
         }
 
@@ -2569,6 +2585,10 @@ public final class MainHook extends XposedModule {
             action = newAction;
             t9 = keyInfo != null && keyInfo.t9;
             thresholdPx = Math.max(1f, threshold);
+        }
+
+        void setDirectCommit(View keyboard) {
+            if (matches(keyboard)) directCommit = true;
         }
 
         void markTriggered(View keyboard) {
@@ -2583,6 +2603,7 @@ public final class MainHook extends XposedModule {
             action = Config.ACTION_NONE;
             t9 = false;
             triggered = false;
+            directCommit = false;
         }
 
         boolean matches(View keyboard) {
