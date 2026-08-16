@@ -1353,18 +1353,16 @@ public final class MainHook extends XposedModule {
 
             KeyInfo keyInfo = keyAfterDown(keyboard, event);
 
-            boolean directCommit = false;
+            String directText = null;
             if (config.letterModeEnabled && keyInfo != null && !keyInfo.t9) {
                 String key = keyInfo.key;
                 if (key != null && key.length() == 1 && key.charAt(0) >= 'a' && key.charAt(0) <= 'z') {
-                    commitLetterDirectly(keyboard, key);
-                    directCommit = true;
+                    directText = key;
                 }
             }
             if (config.letterModeEnabled && keyInfo == null) {
                 if (isSpaceKeyAtTouch(keyboard, event)) {
-                    commitLetterDirectly(keyboard, " ");
-                    directCommit = true;
+                    directText = " ";
                 }
             }
 
@@ -1374,9 +1372,11 @@ public final class MainHook extends XposedModule {
             float thresholdPx = dp(keyboard,
                     keyInfo != null && keyInfo.t9 ? config.t9ThresholdDp : config.thresholdDp);
             tracker.setBinding(keyboard, keyInfo, requestedAction, thresholdPx);
-            if (directCommit) {
-                // 字母模式已在按下时直接提交，抬起时需要拦截原键盘输入，避免重复。
-                tracker.setDirectCommit(keyboard);
+            if (directText != null) {
+                // 字母模式下不立即提交：先让原键盘取消这次按键，避免它在 UP 时重复提交；
+                // 等确定是普通点击（未触发下滑）后，在 ACTION_UP 时由我们自己提交。
+                tracker.setDirectCommit(keyboard, directText);
+                proceedWithCancel(chain, event);
             } else if (requestedAction == Config.ACTION_NONE) {
                 tracker.clear(keyboard);
             }
@@ -1434,10 +1434,12 @@ public final class MainHook extends XposedModule {
         }
 
         if (tracker.directCommit && maskedAction == MotionEvent.ACTION_UP) {
-            // 拦截抬起事件并发送 CANCEL，避免原键盘再提交一次字母/空格。
-            proceedWithCancel(chain, event);
+            String text = tracker.directText;
             tracker.clear(keyboard);
             keyboard.post(() -> hideKeyboardHint(120L));
+            if (text != null) {
+                commitLetterDirectly(keyboard, text);
+            }
             return Boolean.TRUE;
         }
 
@@ -2562,6 +2564,7 @@ public final class MainHook extends XposedModule {
         private boolean t9;
         private boolean triggered;
         private boolean directCommit;
+        private String directText;
         private boolean active;
 
         void begin(View keyboard, float x, float y) {
@@ -2575,6 +2578,7 @@ public final class MainHook extends XposedModule {
             t9 = false;
             triggered = false;
             directCommit = false;
+            directText = null;
             active = true;
         }
 
@@ -2587,8 +2591,11 @@ public final class MainHook extends XposedModule {
             thresholdPx = Math.max(1f, threshold);
         }
 
-        void setDirectCommit(View keyboard) {
-            if (matches(keyboard)) directCommit = true;
+        void setDirectCommit(View keyboard, String text) {
+            if (matches(keyboard)) {
+                directCommit = true;
+                directText = text;
+            }
         }
 
         void markTriggered(View keyboard) {
@@ -2604,6 +2611,7 @@ public final class MainHook extends XposedModule {
             t9 = false;
             triggered = false;
             directCommit = false;
+            directText = null;
         }
 
         boolean matches(View keyboard) {
