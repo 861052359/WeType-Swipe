@@ -331,6 +331,7 @@ public final class MainHook extends XposedModule {
             config.vibration = intent.getBooleanExtra(Config.KEY_VIBRATION, true);
             config.showKeyLabels = intent.getBooleanExtra(Config.KEY_SHOW_KEY_LABELS, true);
             config.showTriggerHint = intent.getBooleanExtra(Config.KEY_SHOW_TRIGGER_HINT, true);
+            config.letterModeEnabled = intent.getBooleanExtra(Config.KEY_LETTER_MODE, false);
             config.revision = intent.getIntExtra(Config.KEY_REVISION, 0);
             for (char key = 'a'; key <= 'z'; key++) {
                 config.qwertyLabels[key - 'a'] = Config.normalizeLabelValue(
@@ -378,6 +379,7 @@ public final class MainHook extends XposedModule {
                     .putBoolean(Config.KEY_VIBRATION, config.vibration)
                     .putBoolean(Config.KEY_SHOW_KEY_LABELS, config.showKeyLabels)
                     .putBoolean(Config.KEY_SHOW_TRIGGER_HINT, config.showTriggerHint)
+                    .putBoolean(Config.KEY_LETTER_MODE, config.letterModeEnabled)
                     .putInt(Config.KEY_REVISION, config.revision);
             for (char key = 'a'; key <= 'z'; key++) {
                 editor.putString(Config.qwertyLabelPrefKey(key),
@@ -427,6 +429,7 @@ public final class MainHook extends XposedModule {
             config.vibration = prefs.getBoolean(Config.KEY_VIBRATION, true);
             config.showKeyLabels = prefs.getBoolean(Config.KEY_SHOW_KEY_LABELS, true);
             config.showTriggerHint = prefs.getBoolean(Config.KEY_SHOW_TRIGGER_HINT, true);
+            config.letterModeEnabled = prefs.getBoolean(Config.KEY_LETTER_MODE, false);
             config.revision = prefs.getInt(Config.KEY_REVISION, 0);
             for (char key = 'a'; key <= 'z'; key++) {
                 config.qwertyLabels[key - 'a'] = Config.normalizeLabelValue(
@@ -1350,6 +1353,17 @@ public final class MainHook extends XposedModule {
 
             KeyInfo keyInfo = keyAfterDown(keyboard, event);
 
+            if (config.letterModeEnabled && keyInfo != null && !keyInfo.t9) {
+                String key = keyInfo.key;
+                if (key != null && key.length() == 1 && key.charAt(0) >= 'a' && key.charAt(0) <= 'z') {
+                    commitLetterDirectly(keyboard, key);
+                }
+            }
+            if (config.letterModeEnabled && keyInfo == null) {
+                if (isSpaceKeyAtTouch(keyboard, event)) {
+                    commitLetterDirectly(keyboard, " ");
+                }
+            }
 
             int requestedAction = keyInfo == null
                     ? Config.ACTION_NONE
@@ -1419,6 +1433,35 @@ public final class MainHook extends XposedModule {
             keyboard.post(() -> hideKeyboardHint(120L));
         }
         return result;
+    }
+
+    private void commitLetterDirectly(View keyboard, String text) {
+        try {
+            InputMethodService ime = imeRef.get();
+            if (ime == null) ime = findIme(keyboard.getContext());
+            if (ime == null) return;
+            imeRef = new WeakReference<>(ime);
+            InputConnection ic = ime.getCurrentInputConnection();
+            if (ic != null) {
+                try { ic.finishComposingText(); } catch (Throwable ignored) {}
+                ic.commitText(text, 1);
+            }
+        } catch (Throwable throwable) {
+            logError("letter-mode commit failed", throwable);
+        }
+    }
+
+    private boolean isSpaceKeyAtTouch(View keyboard, MotionEvent event) {
+        if (keyboard == null || event == null) return false;
+        float x = event.getX();
+        float y = event.getY();
+        int height = keyboard.getHeight();
+        int width = keyboard.getWidth();
+        if (height <= 0 || width <= 0) return false;
+        float spaceY = height * 0.875f;
+        float spaceWidth = width * 0.6f;
+        float spaceX = width * 0.5f;
+        return y >= spaceY && x >= spaceX - spaceWidth / 2f && x <= spaceX + spaceWidth / 2f;
     }
 
     private void showKeyboardHint(View keyboard, String keyLabel, int action, boolean executed) {

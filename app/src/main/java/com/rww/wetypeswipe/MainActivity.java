@@ -104,6 +104,7 @@ public final class MainActivity extends Activity {
     private CheckBox showTriggerHint;
     private CheckBox vibration;
     private CheckBox hideIcon;
+    private CheckBox letterMode;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -181,7 +182,7 @@ public final class MainActivity extends Activity {
         title.setTypeface(Typeface.DEFAULT_BOLD);
         header.addView(title);
 
-        TextView version = text("v1.11.5 · 新增全文导航与跨行选择", 13, COLOR_SECONDARY);
+        TextView version = text("v1.11.5 · 新增字母模式", 13, COLOR_SECONDARY);
         LinearLayout.LayoutParams versionParams = wrap();
         versionParams.topMargin = dp(4);
         header.addView(version, versionParams);
@@ -453,6 +454,17 @@ public final class MainActivity extends Activity {
         TextView note = text("隐藏后可从 LSPosed 的模块设置页面重新进入。", 12, COLOR_SECONDARY);
         note.setPadding(dp(18), 0, dp(18), dp(14));
         card.addView(note);
+        card.addView(divider());
+
+        letterMode = new CheckBox(this);
+        letterMode.setText("字母模式（直接输入字母，不显示候选词）");
+        letterMode.setTextSize(15);
+        letterMode.setTextColor(COLOR_TEXT);
+        letterMode.setPadding(dp(12), dp(6), dp(12), dp(6));
+        letterMode.setChecked(prefs.getBoolean(Config.KEY_LETTER_MODE, false));
+        card.addView(letterMode, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
+
         return card;
     }
 
@@ -775,6 +787,7 @@ public final class MainActivity extends Activity {
                 .putBoolean(Config.KEY_SHOW_KEY_LABELS, showKeyLabels.isChecked())
                 .putBoolean(Config.KEY_SHOW_TRIGGER_HINT, showTriggerHint.isChecked())
                 .putBoolean(Config.KEY_HIDE_ICON, shouldHideIcon)
+                .putBoolean(Config.KEY_LETTER_MODE, letterMode.isChecked())
                 .putInt(Config.KEY_REVISION, revision);
 
         for (char key = 'a'; key <= 'z'; key++) {
@@ -819,6 +832,7 @@ public final class MainActivity extends Activity {
         changed.putExtra(Config.KEY_VIBRATION, vibration.isChecked());
         changed.putExtra(Config.KEY_SHOW_KEY_LABELS, showKeyLabels.isChecked());
         changed.putExtra(Config.KEY_SHOW_TRIGGER_HINT, showTriggerHint.isChecked());
+        changed.putExtra(Config.KEY_LETTER_MODE, letterMode.isChecked());
         changed.putExtra(Config.KEY_REVISION, revision);
         for (char key = 'a'; key <= 'z'; key++) {
             changed.putExtra(Config.qwertyLabelPrefKey(key),

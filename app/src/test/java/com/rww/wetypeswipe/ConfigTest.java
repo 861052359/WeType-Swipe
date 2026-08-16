@@ -76,6 +76,11 @@ public final class ConfigTest {
         assertEquals("😀甲乙丙", Config.normalizeLabelValue("😀甲乙丙丁"));
     }
 
+    @Test public void letterModeIsDisabledByDefault() {
+        Config config = new Config();
+        assertEquals(false, config.letterModeEnabled);
+    }
+
     @Test public void configuredLabelsOverrideAutomaticLabels() {
         Config config = new Config();
         config.qwertyLabels['c' - 'a'] = "自定";

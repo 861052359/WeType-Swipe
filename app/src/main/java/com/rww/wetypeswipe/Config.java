@@ -35,6 +35,7 @@ final class Config {
     static final String KEY_SHOW_TRIGGER_HINT = "show_trigger_hint";
     static final String KEY_HIDE_ICON = "hide_icon";
     static final String KEY_REVISION = "revision";
+    static final String KEY_LETTER_MODE = "letter_mode";
     static final String KEY_QWERTY_LABEL_PREFIX = "qwerty_label_";
     static final String KEY_T9_LABEL_PREFIX = "t9_label_";
     static final String LABEL_HIDDEN = "__HIDDEN__";
@@ -126,6 +127,7 @@ final class Config {
     boolean showKeyLabels = true;
     boolean showTriggerHint = true;
     int revision = 0;
+    boolean letterModeEnabled = false;
 
     final int[] t9Actions = new int[10];
     final String[] qwertyLabels = new String[26];
