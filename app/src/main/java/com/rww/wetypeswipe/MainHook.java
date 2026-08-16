@@ -1483,7 +1483,9 @@ public final class MainHook extends XposedModule {
             try {
                 // WxHldService 覆写了 finishComposingText（内部 y1(true)），会一并清理
                 // 输入法自己的组词缓冲（PendingInput）与候选栏，保证字母模式下不残留候选字。
-                ime.finishComposingText();
+                // InputMethodService 基类没有该方法，按输入法实现类反射调用。
+                Method finishMethod = findMethod(ime.getClass(), "finishComposingText", new Class<?>[0]);
+                if (finishMethod != null) finishMethod.invoke(ime);
             } catch (Throwable ignored) {}
             InputConnection ic = ime.getCurrentInputConnection();
             if (ic != null) {
