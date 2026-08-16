@@ -1332,6 +1332,28 @@ public final class MainHook extends XposedModule {
         return false;
     }
 
+    // 字母模式只对英文键盘生效；中文拼音/双拼/手写等键盘保持原生输入流程，
+    // 避免字母模式把中文输入也变成逐字母上屏。无法识别键盘类型时保持旧行为。
+    private boolean letterModeApplies(View keyboard) {
+        if (keyboard == null) return false;
+        try {
+            String className = keyboard.getClass().getName();
+            if (LetterModeGuard.isEnglishKeyboardClassName(className)) return true;
+            Object type = invoke(keyboard, "getKeyboardType");
+            if (type instanceof Enum) {
+                String name = ((Enum<?>) type).name();
+                if (LetterModeGuard.isEnglishKeyboardTypeName(name)) return true;
+            }
+            Integer value = integerField(type, "value");
+            if (value != null) {
+                return LetterModeGuard.isEnglishKeyboardTypeValue(value);
+            }
+        } catch (Throwable throwable) {
+            logError("letter-mode keyboard type check failed", throwable);
+        }
+        return true;
+    }
+
     private Object interceptKeyboardTouch(XposedInterface.Chain chain, View keyboard, MotionEvent event) throws Throwable {
         final int maskedAction = event.getActionMasked();
         if (event.getPointerCount() != 1) {
@@ -1352,15 +1374,16 @@ public final class MainHook extends XposedModule {
             Object result = chain.proceed();
 
             KeyInfo keyInfo = keyAfterDown(keyboard, event);
+            boolean letterMode = config.letterModeEnabled && letterModeApplies(keyboard);
 
             String directText = null;
-            if (config.letterModeEnabled && keyInfo != null && !keyInfo.t9) {
+            if (letterMode && keyInfo != null && !keyInfo.t9) {
                 String key = keyInfo.key;
                 if (key != null && key.length() == 1 && key.charAt(0) >= 'a' && key.charAt(0) <= 'z') {
                     directText = key;
                 }
             }
-            if (config.letterModeEnabled && keyInfo == null) {
+            if (letterMode && keyInfo == null) {
                 if (isSpaceKeyAtTouch(keyboard, event)) {
                     directText = " ";
                 }
@@ -1457,6 +1480,11 @@ public final class MainHook extends XposedModule {
             if (ime == null) ime = findIme(keyboard.getContext());
             if (ime == null) return;
             imeRef = new WeakReference<>(ime);
+            try {
+                // WxHldService 覆写了 finishComposingText（内部 y1(true)），会一并清理
+                // 输入法自己的组词缓冲（PendingInput）与候选栏，保证字母模式下不残留候选字。
+                ime.finishComposingText();
+            } catch (Throwable ignored) {}
             InputConnection ic = ime.getCurrentInputConnection();
             if (ic != null) {
                 try { ic.finishComposingText(); } catch (Throwable ignored) {}
@@ -1672,8 +1700,14 @@ public final class MainHook extends XposedModule {
 
     private KeyInfo keyAfterDown(Object keyboard, MotionEvent event) {
         Object button = invoke(keyboard, "getActionButton");
-        if (button == null) button = invoke(keyboard, "v1", event, false);
-        if (button == null) button = invoke(keyboard, "v1", event, true);
+        for (String name : LetterModeGuard.touchKeyButtonMethodCandidates()) {
+            if (button == null) button = invoke(keyboard, name, event, false);
+            if (button == null) button = invoke(keyboard, name, event, true);
+        }
+        if (button == null) {
+            button = invoke(keyboard, LetterModeGuard.coordinateKeyButtonMethod(),
+                    (int) event.getX(), (int) event.getY(), false, false);
+        }
         return keyFromButton(keyboard, button);
     }
 
